@@ -48,19 +48,27 @@ public static class DemoSections
 
     public static void PrintBinSection()
     {
+        int total16 = IsraeliCards.KnownBins.Count(b => b.CardLength == 16);
+        int total15 = IsraeliCards.KnownBins.Count(b => b.CardLength == 15);
+        int total14 = IsraeliCards.KnownBins.Count(b => b.CardLength == 14);
+
         ConsoleHelper.PrintSection("Known Israeli Card BIN Prefixes");
-        ConsoleHelper.PrintInfo("Knowing the card is Israeli constrains the first 6 digits to ~15 known values.");
+        ConsoleHelper.PrintInfo($"Knowing the card is Israeli constrains the first 6 digits to one of {IsraeliCards.KnownBins.Count} known BINs.");
         ConsoleHelper.PrintInfo("(Approximate list — for educational use only)");
         Console.WriteLine();
         Console.ForegroundColor = ConsoleColor.Gray;
-        Console.WriteLine($"  {"Prefix",-8} {"Issuer",-35} {"Digits",6}");
-        Console.WriteLine($"  {new string('─', 53)}");
+        Console.WriteLine($"  {"Prefix",-8} {"Issuer",-38} {"Digits",6}");
+        Console.WriteLine($"  {new string('─', 56)}");
         foreach (var b in IsraeliCards.KnownBins)
-            Console.WriteLine($"  {b.Prefix,-8} {b.Issuer,-35} {b.CardLength,6}");
+            Console.WriteLine($"  {b.Prefix,-8} {b.Issuer,-38} {b.CardLength,6}");
         Console.ResetColor();
         Console.WriteLine();
-        ConsoleHelper.PrintHighlight("Candidates per BIN (16-digit card)", "1,000,000,000  (10^9)");
-        ConsoleHelper.PrintHighlight("With ~13 Israeli 16-digit BINs",     "~13,000,000,000  (13 × 10^9)");
+        ConsoleHelper.PrintHighlight("16-digit BINs (Visa / Mastercard)",  $"{total16}  →  {total16:N0} × 10^9 = {(long)total16 * 1_000_000_000L:N0} candidates");
+        if (total15 > 0)
+            ConsoleHelper.PrintHighlight("15-digit BINs (Amex)",           $"{total15}  →  {total15:N0} × 10^9 = {(long)total15 * 1_000_000_000L:N0} candidates");
+        if (total14 > 0)
+            ConsoleHelper.PrintHighlight("14-digit BINs (Diners)",         $"{total14}  →  {total14:N0} × 10^8 = {(long)total14 * 100_000_000L:N0} candidates");
+        ConsoleHelper.PrintHighlight("Total search space (all 16-digit)",  $"~{(long)total16 * 1_000_000_000L:N0}");
     }
 
     /// <param name="attacks">Results from the PAN cracking runs. HashesPerSecond in M/sec for CPU, G/sec×1000 for GPU.</param>
