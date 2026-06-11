@@ -56,7 +56,8 @@ ConsoleHelper.Pause("Press any key to start cracking...");
 var prog = new Progress<CrackProgress>(p =>
     ConsoleHelper.PrintProgress(p.Tried, p.Total, p.Elapsed, p.MHashSec));
 
-var results = new List<(string Algorithm, TimeSpan Elapsed, double MHashSec)>();
+var results  = new List<(string Algorithm, TimeSpan Elapsed, double MHashSec)>();
+var attacks  = new List<AttackResult>();
 
 // ── Attack 1: SHA1, no salt ───────────────────────────────────────────────
 ConsoleHelper.PrintSection("Attack 1 — SHA1 (no salt)");
@@ -65,7 +66,7 @@ var r1 = await HashCracker.CrackAsync(sha1Hash, bin, HashAlgorithmName.SHA1,
     SaltMode.None, null, prog, default);
 Console.WriteLine();
 PrintResult("SHA1  (no salt)", r1, card);
-results.Add(("SHA1  (no salt)", r1.Elapsed, r1.HashesPerSecond));
+Add("SHA1  (no salt)", r1);
 ConsoleHelper.Pause();
 
 // ── Attack 2: SHA256, no salt ─────────────────────────────────────────────
@@ -75,7 +76,7 @@ var r2 = await HashCracker.CrackAsync(sha256Hash, bin, HashAlgorithmName.SHA256,
     SaltMode.None, null, prog, default);
 Console.WriteLine();
 PrintResult("SHA256 (no salt)", r2, card);
-results.Add(("SHA256 (no salt)", r2.Elapsed, r2.HashesPerSecond));
+Add("SHA256 (no salt)", r2);
 ConsoleHelper.Pause();
 
 // ── Attack 3: SHA256, static salt ────────────────────────────────────────
@@ -86,7 +87,7 @@ var r3 = await HashCracker.CrackAsync(sha256Static, bin, HashAlgorithmName.SHA25
     SaltMode.Static, staticSalt, prog, default);
 Console.WriteLine();
 PrintResult("SHA256 (static salt)", r3, card);
-results.Add(("SHA256 (static salt)", r3.Elapsed, r3.HashesPerSecond));
+Add("SHA256 (static salt)", r3);
 ConsoleHelper.Pause();
 
 // ── Attack 4: SHA256, per-card random salt ───────────────────────────────
@@ -97,7 +98,7 @@ var r4 = await HashCracker.CrackAsync(sha256PerCard, bin, HashAlgorithmName.SHA2
     SaltMode.PerCard, perCardSalt, prog, default);
 Console.WriteLine();
 PrintResult("SHA256 (per-card random salt)", r4, card);
-results.Add(("SHA256 (per-card random salt, 16 B)", r4.Elapsed, r4.HashesPerSecond));
+Add("SHA256 (per-card random salt, 16 B)", r4);
 ConsoleHelper.Pause();
 
 // ── Comparison table ──────────────────────────────────────────────────────
@@ -105,12 +106,44 @@ ConsoleHelper.PrintSection("Summary");
 ConsoleHelper.PrintHighlight("Original card", card);
 ConsoleHelper.PrintComparisonTable(results);
 
-// ── Track 2 section ───────────────────────────────────────────────────────
-DemoSections.PrintTrack2Section();
+// ── Track 2 section (extrapolated from measured speeds) ───────────────────
+DemoSections.PrintTrack2Section(attacks, isGpu: false);
 ConsoleHelper.Pause();
 
 // ── Takeaways ─────────────────────────────────────────────────────────────
 DemoSections.PrintTakeaways();
+
+// ── Write summary file ────────────────────────────────────────────────────
+var summary = new ResultSummary
+{
+    MachineType  = "CPU",
+    HardwareInfo = $"{Environment.ProcessorCount} logical cores  ({Environment.OSVersion})",
+    RunAt        = DateTime.Now,
+    Card         = card,
+    BinPrefix    = bin.Prefix,
+    BinIssuer    = bin.Issuer,
+    Attacks      = attacks,
+};
+string summaryPath = summary.Write();
+Console.WriteLine();
+ConsoleHelper.PrintSuccess($"Summary written to: {summaryPath}");
+
+// ── Check if GPU summary exists and print comparison ──────────────────────
+string? gpuText = ResultSummary.TryReadCounterpart("CPU");
+if (gpuText is not null)
+{
+    ConsoleHelper.PrintSection("GPU Summary Found — Comparison");
+    ConsoleHelper.PrintInfo("Content of summary-gpu.txt:");
+    Console.WriteLine();
+    Console.ForegroundColor = ConsoleColor.Cyan;
+    Console.WriteLine(gpuText);
+    Console.ResetColor();
+}
+else
+{
+    ConsoleHelper.PrintInfo("No summary-gpu.txt found yet. Run CardHashDemo.Gpu on your NVIDIA machine,");
+    ConsoleHelper.PrintInfo("then copy summary-gpu.txt here to see the side-by-side comparison.");
+}
 
 static void PrintResult(string label, CrackResult r, string expected)
 {
@@ -121,4 +154,10 @@ static void PrintResult(string label, CrackResult r, string expected)
     ConsoleHelper.PrintResultRow("Elapsed",            r.Elapsed.ToString(@"hh\:mm\:ss\.fff"));
     ConsoleHelper.PrintResultRow("Speed",              $"{r.HashesPerSecond:F1} M hash/sec");
     ConsoleHelper.PrintResultRow("Combinations tried", $"{r.Tried:N0} / {r.Total:N0}");
+}
+
+void Add(string label, CrackResult r)
+{
+    results.Add((label, r.Elapsed, r.HashesPerSecond));
+    attacks.Add(new AttackResult(label, r.Elapsed, r.HashesPerSecond, r.Tried, r.Total));
 }

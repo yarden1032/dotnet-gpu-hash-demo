@@ -63,7 +63,9 @@ public static class DemoSections
         ConsoleHelper.PrintHighlight("With ~13 Israeli 16-digit BINs",     "~13,000,000,000  (13 × 10^9)");
     }
 
-    public static void PrintTrack2Section()
+    /// <param name="attacks">Results from the PAN cracking runs. HashesPerSecond in M/sec for CPU, G/sec×1000 for GPU.</param>
+    /// <param name="isGpu">True when speeds are in billions/sec rather than millions/sec.</param>
+    public static void PrintTrack2Section(IReadOnlyList<AttackResult> attacks, bool isGpu = false)
     {
         ConsoleHelper.PrintSection("What About SHA1( Track 2 )?");
         ConsoleHelper.PrintInfo("Track 2 is the full magnetic stripe payload:");
@@ -71,17 +73,40 @@ public static class DemoSections
         ConsoleHelper.PrintHighlight("Example", ";4362011234567894=2512101000000000?");
         Console.WriteLine();
         ConsoleHelper.PrintInfo("Expanded search space per BIN:");
-        ConsoleHelper.PrintInfo("  PAN combinations           :   10^9");
-        ConsoleHelper.PrintInfo("  Expiry (12 months × 5 yrs) :   ~60 values");
-        ConsoleHelper.PrintInfo("  Service Code (common set)  :   ~15 values");
-        ConsoleHelper.PrintInfo("  Discretionary data         :   often zeros or constant");
-        ConsoleHelper.PrintHighlight("Total per BIN", "~10^9 × 60 × 15  ≈  9 × 10^11");
+        ConsoleHelper.PrintInfo($"  PAN combinations                   :   {ResultSummary.PanCombinations:N0}  (10^9)");
+        ConsoleHelper.PrintInfo($"  Expiry dates (6 yrs × 12 months)   :   {ResultSummary.ExpiryDatesAll} values");
+        ConsoleHelper.PrintInfo($"  Service codes (common set)         :   {ResultSummary.ServiceCodes} values");
+        ConsoleHelper.PrintInfo( "  Discretionary data                 :   often zeros or constant");
         Console.WriteLine();
-        ConsoleHelper.PrintInfo("CPU (8 cores):         ~10 hours per BIN");
-        ConsoleHelper.PrintInfo("GPU (RTX 3080):        ~45 seconds per BIN");
-        ConsoleHelper.PrintWarning("With leaked expiry year → ~7 seconds per BIN on GPU");
+        ConsoleHelper.PrintHighlight("Full Track2 space per BIN",
+            $"{ResultSummary.Track2Full:N0}  (~10^12)");
+        ConsoleHelper.PrintHighlight("With known expiry year",
+            $"{ResultSummary.Track2KnownYear:N0}  (~1.8×10^11)");
         Console.WriteLine();
-        ConsoleHelper.PrintInfo("Conclusion: SHA1(Track2) is still breakable — just slower.");
+
+        // ── Extrapolate from measured speeds ──────────────────────────────
+        ConsoleHelper.PrintInfo("Estimated crack time based on YOUR measured speeds:");
+        Console.WriteLine();
+        Console.ForegroundColor = ConsoleColor.Yellow;
+        Console.WriteLine($"  {"Algorithm",-38} │ {"Speed",12} │ {"Full Track2",15} │ {"Known year",13}");
+        Console.WriteLine($"  {new string('─', 88)}");
+        Console.ResetColor();
+
+        foreach (var a in attacks)
+        {
+            // HashesPerSecond is always stored in M/sec (millions) in AttackResult
+            double hps  = a.HashesPerSecond * 1_000_000.0;
+            string t1   = ResultSummary.FormatDuration(ResultSummary.Track2Full      / hps);
+            string t2   = ResultSummary.FormatDuration(ResultSummary.Track2KnownYear / hps);
+            string speedLabel = isGpu
+                ? $"{a.HashesPerSecond / 1000.0:F3} G/sec"
+                : $"{a.HashesPerSecond:F1} M/sec";
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.WriteLine($"  {a.Algorithm,-38} │ {speedLabel,12} │ {t1,15} │ {t2,13}");
+        }
+        Console.ResetColor();
+        Console.WriteLine();
+        ConsoleHelper.PrintWarning("Conclusion: SHA1(Track2) is still crackable on this machine — just slower.");
     }
 
     public static void PrintTakeaways()

@@ -73,6 +73,7 @@ var gpuProg = new Progress<(long tried, long total, TimeSpan elapsed)>(p =>
 });
 
 var results = new List<(string Algorithm, TimeSpan Elapsed, double GHashSec)>();
+var attacks = new List<AttackResult>();
 
 void RunAttack(string label, string hash, bool sha256, byte[] salt)
 {
@@ -87,6 +88,8 @@ void RunAttack(string label, string hash, bool sha256, byte[] salt)
     ConsoleHelper.PrintResultRow("Speed",              $"{r.GHashSec:F3} G hash/sec");
     ConsoleHelper.PrintResultRow("Combinations tried", $"{r.Tried:N0} / {r.Total:N0}");
     results.Add((label, r.Elapsed, r.GHashSec));
+    // Store speed in M/sec convention (GHashSec × 1000) so Track2 math is uniform
+    attacks.Add(new AttackResult(label, r.Elapsed, r.GHashSec * 1000.0, r.Tried, r.Total));
     ConsoleHelper.Pause();
 }
 
@@ -109,6 +112,43 @@ Console.WriteLine();
 ConsoleHelper.PrintWarning("Salt defeats rainbow tables. It does NOT defeat brute force on a small input space.");
 ConsoleHelper.PrintWarning("Fix: use Argon2id or bcrypt with a work factor.");
 
-DemoSections.PrintTrack2Section();
+DemoSections.PrintTrack2Section(attacks, isGpu: true);
 ConsoleHelper.Pause();
 DemoSections.PrintTakeaways();
+
+// ── Write summary file ────────────────────────────────────────────────────
+string gpuDeviceName;
+using (var ctx2 = ILGPU.Context.CreateDefault())
+using (var acc2 = ctx2.CreateCudaAccelerator(0))
+    gpuDeviceName = $"{acc2.Name}  ({acc2.MemorySize / 1024 / 1024} MB VRAM)";
+
+var summary = new ResultSummary
+{
+    MachineType  = "GPU",
+    HardwareInfo = gpuDeviceName,
+    RunAt        = DateTime.Now,
+    Card         = card,
+    BinPrefix    = bin.Prefix,
+    BinIssuer    = bin.Issuer,
+    Attacks      = attacks,
+};
+string summaryPath = summary.Write();
+Console.WriteLine();
+ConsoleHelper.PrintSuccess($"Summary written to: {summaryPath}");
+
+// ── Check if CPU summary exists ───────────────────────────────────────────
+string? cpuText = ResultSummary.TryReadCounterpart("GPU");
+if (cpuText is not null)
+{
+    ConsoleHelper.PrintSection("CPU Summary Found — Comparison");
+    ConsoleHelper.PrintInfo("Content of summary-cpu.txt:");
+    Console.WriteLine();
+    Console.ForegroundColor = ConsoleColor.Cyan;
+    Console.WriteLine(cpuText);
+    Console.ResetColor();
+}
+else
+{
+    ConsoleHelper.PrintInfo("No summary-cpu.txt found yet. Run CardHashDemo.Cpu on your CPU machine,");
+    ConsoleHelper.PrintInfo("then copy summary-cpu.txt here to see the side-by-side comparison.");
+}
