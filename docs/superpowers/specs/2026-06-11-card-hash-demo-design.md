@@ -65,18 +65,32 @@ Colored ASCII banner. Red warning: educational use / authorized testing only.
 - Live brute-force: all 10^9 combinations for that BIN
 - On find: prints card + elapsed + speed
 
-### 6. SHA256(PAN) attack
-- Same card, same hash engine, SHA256 algorithm
+### 6. SHA256(PAN) attack — no salt
+- Same card, SHA256, no salt
 - Prints elapsed + speed
 
-### 7. Side-by-side comparison table
+### 7. SHA256(static_salt + PAN) attack
+- Hardcoded salt bytes (e.g. `"MySuperSecretPepper"`) baked into code
+- Explanation: attacker who has the source/binary knows the salt — prepend it to every candidate, same speed
+- Crack runs; prints elapsed (barely slower than unsalted)
+
+### 8. SHA256(random_salt + PAN) attack — per-card salt stored in DB
+- Random 16-byte salt generated alongside the hash and "stored in DB"
+- Explanation: attacker who stole the DB row has both hash AND salt — still full-speed brute force
+- Crack runs with the known per-card salt; prints elapsed
+- Key message: **salt defeats rainbow tables, not brute force**. The fix is a slow KDF.
+
+### 9. Side-by-side comparison table
 ```
-Algorithm  | Elapsed     | Speed
-───────────────────────────────────────
-SHA1       | HH:MM:SS.ms | XX.X M/sec
-SHA256     | HH:MM:SS.ms | XX.X M/sec
+Algorithm                    | Elapsed      | Speed
+─────────────────────────────┼──────────────┼──────────────
+SHA1  (no salt)              | HH:MM:SS.ms  | XX.X M/sec
+SHA256 (no salt)             | HH:MM:SS.ms  | XX.X M/sec
+SHA256 (static salt)         | HH:MM:SS.ms  | XX.X M/sec
+SHA256 (per-card random salt)| HH:MM:SS.ms  | XX.X M/sec
+─────────────────────────────┴──────────────┴──────────────
+None of the above are safe. Use Argon2id/bcrypt.
 ```
-Key message: SHA256 is ~2× slower but still breaks in minutes — use bcrypt/Argon2.
 
 ### 8. SHA1(Track2) section (explanation only, no live crack)
 - Track 2 format: `;PAN=YYMM SC DISC?`
@@ -114,19 +128,24 @@ BIN list (~15 entries) covering Max, Hapoalim, Leumi, Discount, Mizrahi, CAL, Am
 record CrackResult(string? Card, TimeSpan Elapsed, long Tried, long Total, double HashesPerSecond);
 record CrackProgress(long Tried, long Total, TimeSpan Elapsed);
 
+enum SaltMode { None, Static, PerCard }
+
 static Task<CrackResult> CrackAsync(
     string targetHashHex,
     BinEntry bin,
     HashAlgorithmName algorithm,          // SHA1 or SHA256
+    SaltMode saltMode,
+    byte[]? salt,                         // null for None; static bytes for Static; per-card bytes for PerCard
     IProgress<CrackProgress>? progress,
     CancellationToken ct);
 ```
 
 Inner loop (zero allocation per iteration):
-1. Reconstruct 16-byte card from index `i` via integer division — no `ToString`
+1. Reconstruct card bytes from index `i` via integer division — no `ToString`
 2. Compute Luhn check digit into last byte
-3. `SHA1.HashData(cardBytes, hashSpan)` or `SHA256.HashData(...)` — .NET 10 intrinsics
-4. 20/32-byte span compare against target
+3. Prepend salt bytes if `SaltMode != None` (stack-allocated concat buffer)
+4. `SHA1.HashData(input, hashSpan)` or `SHA256.HashData(...)` — .NET 10 intrinsics
+5. 20/32-byte span compare against target
 5. `Parallel.For` with `MaxDegreeOfParallelism = Environment.ProcessorCount`
 6. Progress sampled every 500 K iterations (atomic counter, no lock)
 7. `ParallelLoopState.Stop()` on match
@@ -167,25 +186,38 @@ static void CrackKernel(
 ```
 [RESULT] Card found   : 4362011234567894
 [RESULT] BIN          : 436201 — Hapoalim Visa
-[RESULT] Algorithm    : SHA1
+[RESULT] Algorithm    : SHA1 (no salt)
 [RESULT] Elapsed      : 00:00:23.417
 [RESULT] Speed        : 42.7 M hash/sec
-[RESULT] Combinations : 1,000,000,000 / 1,000,000,000
+[RESULT] Combinations : 1,000,000,000
 
 [RESULT] Card found   : 4362011234567894
-[RESULT] BIN          : 436201 — Hapoalim Visa
-[RESULT] Algorithm    : SHA256
+[RESULT] Algorithm    : SHA256 (no salt)
 [RESULT] Elapsed      : 00:00:41.103
 [RESULT] Speed        : 24.3 M hash/sec
-[RESULT] Combinations : 1,000,000,000 / 1,000,000,000
 
-──────────────────────────────────────────────
-Algorithm  │ Elapsed      │ Speed
-───────────┼──────────────┼─────────────────
-SHA1       │ 00:00:23.417 │ 42.7 M/sec
-SHA256     │ 00:00:41.103 │ 24.3 M/sec
-──────────────────────────────────────────────
-Neither algorithm is safe. Use Argon2id/bcrypt.
+[RESULT] Card found   : 4362011234567894
+[RESULT] Algorithm    : SHA256 (static salt "MySuperSecretPepper")
+[RESULT] Elapsed      : 00:00:42.881
+[RESULT] Speed        : 23.3 M hash/sec
+[RESULT] Salt known   : YES (in source code)
+
+[RESULT] Card found   : 4362011234567894
+[RESULT] Algorithm    : SHA256 (random per-card salt, stored in DB)
+[RESULT] Elapsed      : 00:00:43.210
+[RESULT] Speed        : 23.1 M hash/sec
+[RESULT] Salt known   : YES (attacker has the DB row)
+
+──────────────────────────────────────────────────────────────────
+Algorithm                     │ Elapsed      │ Speed
+──────────────────────────────┼──────────────┼──────────────────
+SHA1  (no salt)               │ 00:00:23.417 │ 42.7 M/sec
+SHA256 (no salt)              │ 00:00:41.103 │ 24.3 M/sec
+SHA256 (static salt)          │ 00:00:42.881 │ 23.3 M/sec
+SHA256 (per-card random salt) │ 00:00:43.210 │ 23.1 M/sec
+──────────────────────────────────────────────────────────────────
+Salt defeats rainbow tables. It does NOT defeat brute force.
+The fix: use Argon2id or bcrypt with a work factor.
 ```
 
 ---
