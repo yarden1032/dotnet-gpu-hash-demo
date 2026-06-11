@@ -15,12 +15,20 @@ public static class IsraeliCards
         // Bank Leumi
         new("492840", "Bank Leumi Visa"),
         new("431195", "Bank Leumi Visa Classic"),
+        new("458003", "Bank Leumi Visa"),
         // Discount Bank
         new("479614", "Discount Bank Visa"),
         new("457946", "Discount Bank Visa Gold"),
         // Mizrahi-Tefahot
         new("454030", "Mizrahi-Tefahot Visa"),
-        // Max (formerly Leumi Card / CAL)
+        new("458024", "Mizrahi-Tefahot Visa"),
+        // First International / Union / Beinleumi
+        new("458021", "Union Bank Visa"),
+        new("458036", "Beinleumi (First International) Visa"),
+        // Max (Israel Credit Cards Ltd. — formerly Leumi Card / CAL)
+        new("458028", "Max Visa"),
+        new("458050", "Max Visa Platinum"),
+        new("458079", "Max Visa Infinite"),
         new("527136", "Max (Leumi Card) Mastercard"),
         new("526568", "Max Mastercard"),
         new("535840", "Max Mastercard Platinum"),
