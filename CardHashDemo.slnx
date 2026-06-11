@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="CardHashDemo.Core/CardHashDemo.Core.csproj" />
+  <Project Path="CardHashDemo.Cpu/CardHashDemo.Cpu.csproj" />
+  <Project Path="CardHashDemo.Gpu/CardHashDemo.Gpu.csproj" />
+  <Project Path="CardHashDemo.Tests/CardHashDemo.Tests.csproj" />
+</Solution>
