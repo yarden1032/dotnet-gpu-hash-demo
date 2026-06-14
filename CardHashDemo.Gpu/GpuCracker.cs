@@ -3,8 +3,11 @@ using CardHashDemo.Core;
 using ILGPU;
 using ILGPU.Runtime;
 using ILGPU.Runtime.Cuda;
+using ILGPU.Runtime.OpenCL;
 
 namespace CardHashDemo.Gpu;
+
+public enum GpuBackend { Cuda, OpenCL }
 
 public record GpuCrackResult(string? Card, TimeSpan Elapsed, long Tried, long Total, double GHashSec);
 
@@ -12,11 +15,34 @@ public static class GpuCracker
 {
     private const int BatchSize = 1 << 24; // 16 M candidates per GPU launch
 
+    /// <summary>
+    /// Detects the best available GPU backend: CUDA first, then OpenCL.
+    /// Returns null if no GPU is available.
+    /// </summary>
+    public static (GpuBackend Backend, string DeviceInfo)? DetectGpu()
+    {
+        using var context = Context.CreateDefault();
+        try
+        {
+            using var acc = context.CreateCudaAccelerator(0);
+            return (GpuBackend.Cuda, $"{acc.Name}  ({acc.MemorySize / 1024 / 1024} MB VRAM)  [CUDA]");
+        }
+        catch { }
+        try
+        {
+            using var acc = context.CreateCLAccelerator(0);
+            return (GpuBackend.OpenCL, $"{acc.Name}  ({acc.MemorySize / 1024 / 1024} MB VRAM)  [OpenCL]");
+        }
+        catch { }
+        return null;
+    }
+
     public static GpuCrackResult Crack(
         string targetHashHex,
         BinEntry bin,
         bool useSha256,
         byte[] salt,
+        GpuBackend backend,
         IProgress<(long tried, long total, TimeSpan elapsed)>? progress = null)
     {
         int freeDigits = bin.CardLength - bin.Prefix.Length - 1;
@@ -28,7 +54,9 @@ public static class GpuCracker
         int    saltLength = salt.Length;
 
         using var context     = Context.CreateDefault();
-        using var accelerator = context.CreateCudaAccelerator(0);
+        using var accelerator = backend == GpuBackend.Cuda
+            ? (Accelerator)context.CreateCudaAccelerator(0)
+            : context.CreateCLAccelerator(0);
 
         using var dBin       = accelerator.Allocate1D(binBytes);
         using var dTarget    = accelerator.Allocate1D(targetHash);

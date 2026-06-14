@@ -10,19 +10,16 @@ Console.Clear();
 ConsoleHelper.PrintHeader("SHA1 / SHA256 Credit Card Hash Vulnerability Demo  [GPU — NVIDIA CUDA]");
 ConsoleHelper.PrintWarning("EDUCATIONAL USE ONLY — authorized security testing / research");
 
-// ── Verify CUDA is available before starting ──────────────────────────────
-try
+// ── Detect GPU: CUDA first, then OpenCL, exit if neither ─────────────────
+var gpuDetect = GpuCracker.DetectGpu();
+if (gpuDetect is null)
 {
-    using var ctx = ILGPU.Context.CreateDefault();
-    using var acc = ctx.CreateCudaAccelerator(0);
-    ConsoleHelper.PrintSuccess($"CUDA device: {acc.Name}  ({acc.MemorySize / 1024 / 1024} MB VRAM)");
-}
-catch (Exception ex)
-{
-    ConsoleHelper.PrintWarning($"No CUDA device available: {ex.Message}");
+    ConsoleHelper.PrintWarning("No GPU found (tried CUDA and OpenCL).");
     ConsoleHelper.PrintInfo("Run CardHashDemo.Cpu on this machine instead.");
     return;
 }
+var (gpuBackend, gpuDeviceInfo) = gpuDetect.Value;
+ConsoleHelper.PrintSuccess($"GPU detected: {gpuDeviceInfo}");
 
 ConsoleHelper.Pause();
 
@@ -78,7 +75,7 @@ var attacks = new List<AttackResult>();
 void RunAttack(string label, string hash, bool sha256, byte[] salt)
 {
     ConsoleHelper.PrintSection($"Attack — {label}");
-    var r = GpuCracker.Crack(hash, bin, sha256, salt, gpuProg);
+    var r = GpuCracker.Crack(hash, bin, sha256, salt, gpuBackend, gpuProg);
     Console.WriteLine();
     ConsoleHelper.PrintResultRow("Algorithm",          label);
     ConsoleHelper.PrintResultRow("Card found",         r.Card ?? "(not found)");
@@ -117,10 +114,7 @@ ConsoleHelper.Pause();
 DemoSections.PrintTakeaways();
 
 // ── Write summary file ────────────────────────────────────────────────────
-string gpuDeviceName;
-using (var ctx2 = ILGPU.Context.CreateDefault())
-using (var acc2 = ctx2.CreateCudaAccelerator(0))
-    gpuDeviceName = $"{acc2.Name}  ({acc2.MemorySize / 1024 / 1024} MB VRAM)";
+string gpuDeviceName = gpuDeviceInfo; // already captured at startup
 
 var summary = new ResultSummary
 {
