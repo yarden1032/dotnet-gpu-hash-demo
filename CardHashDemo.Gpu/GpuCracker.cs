@@ -17,23 +17,30 @@ public static class GpuCracker
 
     /// <summary>
     /// Detects the best available GPU backend: CUDA first, then OpenCL.
+    /// Each backend gets its own isolated Context so a broken OpenCL driver
+    /// (e.g. Intel Iris) cannot crash the whole detection.
     /// Returns null if no GPU is available.
     /// </summary>
     public static (GpuBackend Backend, string DeviceInfo)? DetectGpu()
     {
-        using var context = Context.CreateDefault();
+        // ── Try CUDA ──────────────────────────────────────────────────────
         try
         {
-            using var acc = context.CreateCudaAccelerator(0);
+            using var ctx = Context.Create(b => b.Cuda());
+            using var acc = ctx.CreateCudaAccelerator(0);
             return (GpuBackend.Cuda, $"{acc.Name}  ({acc.MemorySize / 1024 / 1024} MB VRAM)  [CUDA]");
         }
         catch { }
+
+        // ── Try OpenCL ────────────────────────────────────────────────────
         try
         {
-            using var acc = context.CreateCLAccelerator(0);
+            using var ctx = Context.Create(b => b.OpenCL());
+            using var acc = ctx.CreateCLAccelerator(0);
             return (GpuBackend.OpenCL, $"{acc.Name}  ({acc.MemorySize / 1024 / 1024} MB VRAM)  [OpenCL]");
         }
         catch { }
+
         return null;
     }
 
@@ -53,7 +60,9 @@ public static class GpuCracker
         byte[] binBytes   = Encoding.ASCII.GetBytes(bin.Prefix);
         int    saltLength = salt.Length;
 
-        using var context     = Context.CreateDefault();
+        using var context     = backend == GpuBackend.Cuda
+            ? Context.Create(b => b.Cuda())
+            : Context.Create(b => b.OpenCL());
         using var accelerator = backend == GpuBackend.Cuda
             ? (Accelerator)context.CreateCudaAccelerator(0)
             : context.CreateCLAccelerator(0);
