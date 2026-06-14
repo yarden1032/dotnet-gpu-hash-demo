@@ -1,3 +1,30 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// WHY DOES THIS FILE LOOK SO LOW-LEVEL?
+//
+// ILGPU compiles C# directly to GPU machine code (PTX for CUDA, SPIR-V for
+// OpenCL). Inside a GPU kernel there is no runtime, no GC, and no heap.
+// That means the following normal C# patterns are ALL ILLEGAL in kernel code:
+//
+//   uint[] w = new uint[16]      — no heap, 'new' doesn't exist
+//   static readonly uint[] K256  — static arrays live on the CPU heap
+//   Span<T> / stackalloc         — CPU stack concept, GPU threads lack it
+//   List<T>, LINQ                — require heap allocation
+//   interfaces / abstract        — require a vtable (virtual dispatch)
+//
+// Consequences visible in this file:
+//
+//   W16 struct   — 16 named uint fields (_0.._15) instead of uint[16].
+//                  The switch-based Get/Set compiles to direct register access,
+//                  which is exactly what a small fixed array would do anyway.
+//
+//   K256 method  — 64-case switch instead of a lookup array, same reason.
+//
+//   All uint math — no library support inside kernels; everything is manual.
+//
+// This is not a C# limitation — CUDA C++ and OpenCL C have the same rules.
+// ILGPU just lets you write GPU code in C# syntax instead of a separate file.
+// ═══════════════════════════════════════════════════════════════════════════
+
 namespace CardHashDemo.Core;
 
 /// <summary>
