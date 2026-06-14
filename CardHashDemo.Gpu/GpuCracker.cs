@@ -32,11 +32,20 @@ public static class GpuCracker
         }
         catch { }
 
-        // ── Try OpenCL ────────────────────────────────────────────────────
+        // ── Try OpenCL — also probe that the crack kernel actually compiles ─
+        // Some drivers (e.g. Intel Iris) create an accelerator fine but fail
+        // at kernel compilation.
         try
         {
             using var ctx = Context.Create(b => b.OpenCL());
             using var acc = ctx.CreateCLAccelerator(0);
+            acc.LoadAutoGroupedStreamKernel<
+                Index1D, long, long,
+                ArrayView1D<byte, Stride1D.Dense>, int, int, int,
+                ArrayView1D<byte, Stride1D.Dense>, int, bool, int,
+                ArrayView1D<byte, Stride1D.Dense>,
+                ArrayView1D<long, Stride1D.Dense>,
+                ArrayView1D<byte, Stride1D.Dense>>(CrackKernel);
             return (GpuBackend.OpenCL, $"{acc.Name}  ({acc.MemorySize / 1024 / 1024} MB VRAM)  [OpenCL]");
         }
         catch { }
@@ -76,22 +85,29 @@ public static class GpuCracker
 
         dFound.CopyFromCPU([-1L]);
 
-        var kernel = accelerator.LoadAutoGroupedStreamKernel<
-            Index1D,
-            long,
-            long,
-            ArrayView1D<byte, Stride1D.Dense>,
-            int,
-            int,
-            int,
-            ArrayView1D<byte, Stride1D.Dense>,
-            int,
-            bool,
-            int,
+        Action<Index1D, long, long,
+            ArrayView1D<byte, Stride1D.Dense>, int, int, int,
+            ArrayView1D<byte, Stride1D.Dense>, int, bool, int,
             ArrayView1D<byte, Stride1D.Dense>,
             ArrayView1D<long, Stride1D.Dense>,
-            ArrayView1D<byte, Stride1D.Dense>
-        >(CrackKernel);
+            ArrayView1D<byte, Stride1D.Dense>> kernel;
+        try
+        {
+            kernel = accelerator.LoadAutoGroupedStreamKernel<
+                Index1D, long, long,
+                ArrayView1D<byte, Stride1D.Dense>, int, int, int,
+                ArrayView1D<byte, Stride1D.Dense>, int, bool, int,
+                ArrayView1D<byte, Stride1D.Dense>,
+                ArrayView1D<long, Stride1D.Dense>,
+                ArrayView1D<byte, Stride1D.Dense>>(CrackKernel);
+        }
+        catch (Exception ex)
+        {
+            throw new NotSupportedException(
+                $"Kernel compilation failed on {accelerator.Name} ({backend}). " +
+                "This GPU/driver does not support ILGPU kernels. " +
+                "Run CardHashDemo.Cpu instead.", ex);
+        }
 
         var sw    = System.Diagnostics.Stopwatch.StartNew();
         long tried = 0;

@@ -90,10 +90,20 @@ void RunAttack(string label, string hash, bool sha256, byte[] salt)
     ConsoleHelper.Pause();
 }
 
-RunAttack("SHA1  (no salt)",             sha1Hash,      false, []);
-RunAttack("SHA256 (no salt)",            sha256Hash,    true,  []);
-RunAttack("SHA256 (static salt 16 B)",   sha256Static,  true,  staticSalt);
-RunAttack("SHA256 (per-card salt 16 B)", sha256PerCard, true,  perCardSalt);
+try
+{
+    RunAttack("SHA1  (no salt)",             sha1Hash,      false, []);
+    RunAttack("SHA256 (no salt)",            sha256Hash,    true,  []);
+    RunAttack("SHA256 (static salt 16 B)",   sha256Static,  true,  staticSalt);
+    RunAttack("SHA256 (per-card salt 16 B)", sha256PerCard, true,  perCardSalt);
+}
+catch (NotSupportedException ex)
+{
+    Console.WriteLine();
+    ConsoleHelper.PrintWarning(ex.Message);
+    ConsoleHelper.PrintInfo("Run CardHashDemo.Cpu on this machine instead.");
+    return;
+}
 
 // ── GPU comparison table ──────────────────────────────────────────────────
 ConsoleHelper.PrintSection("GPU Summary");
