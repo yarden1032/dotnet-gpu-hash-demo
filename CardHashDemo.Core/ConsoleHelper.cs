@@ -2,6 +2,16 @@ namespace CardHashDemo.Core;
 
 public static class ConsoleHelper
 {
+    public static void Clear()
+    {
+        try
+        {
+            if (!Console.IsOutputRedirected)
+                Console.Clear();
+        }
+        catch (IOException) { }
+    }
+
     public static void PrintHeader(string text)
     {
         string line = new('═', text.Length + 4);
@@ -64,9 +74,18 @@ public static class ConsoleHelper
 
     public static void Pause(string message = "Press any key to continue...")
     {
+        if (Console.IsInputRedirected)
+            return;
+
         Console.WriteLine();
         WriteColor(ConsoleColor.DarkGray, $"  [{message}]");
-        Console.ReadKey(true);
+        try
+        {
+            Console.ReadKey(true);
+        }
+        catch (InvalidOperationException) { return; }
+        catch (IOException) { return; }
+
         Console.WriteLine();
     }
 

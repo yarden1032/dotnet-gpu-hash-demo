@@ -22,6 +22,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\CardHashDemo.Core\CardHashDemo.Core.csproj" />
+    <ProjectReference Include="..\CardHashDemo.Gpu\CardHashDemo.Gpu.csproj" />
   </ItemGroup>
 
 </Project>

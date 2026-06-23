@@ -3,7 +3,7 @@ using System.Text;
 using CardHashDemo.Core;
 
 Console.OutputEncoding = Encoding.UTF8;
-Console.Clear();
+ConsoleHelper.Clear();
 
 ConsoleHelper.PrintHeader("SHA1 / SHA256 Credit Card Hash Vulnerability Demo  [CPU]");
 ConsoleHelper.PrintWarning("EDUCATIONAL USE ONLY — authorized security testing / research");

@@ -5,21 +5,24 @@ using CardHashDemo.Gpu;
 using ILGPU.Runtime.Cuda;
 
 Console.OutputEncoding = Encoding.UTF8;
-Console.Clear();
+ConsoleHelper.Clear();
 
 ConsoleHelper.PrintHeader("SHA1 / SHA256 Credit Card Hash Vulnerability Demo  [GPU — NVIDIA CUDA]");
 ConsoleHelper.PrintWarning("EDUCATIONAL USE ONLY — authorized security testing / research");
 
 // ── Detect GPU: CUDA first, then OpenCL, exit if neither ─────────────────
-var gpuDetect = GpuCracker.DetectGpu();
-if (gpuDetect is null)
+// Detect all usable GPU backends. Detection also compiles the actual crack
+// kernel, so a listed option means the GPU can run this demo's kernel, not just
+// that Windows can see a display adapter.
+var gpuOptions = GpuCracker.DetectAvailableGpus();
+if (gpuOptions.Count == 0)
 {
     ConsoleHelper.PrintWarning("No GPU found (tried CUDA and OpenCL).");
     ConsoleHelper.PrintInfo("Run CardHashDemo.Cpu on this machine instead.");
     return;
 }
-var (gpuBackend, gpuDeviceInfo) = gpuDetect.Value;
-ConsoleHelper.PrintSuccess($"GPU detected: {gpuDeviceInfo}");
+var (gpuBackend, gpuDeviceInfo) = SelectGpuBackend(gpuOptions);
+ConsoleHelper.PrintSuccess($"GPU selected: {gpuDeviceInfo}");
 
 ConsoleHelper.Pause();
 
@@ -33,6 +36,9 @@ ConsoleHelper.Pause();
 // ── Generate target card ──────────────────────────────────────────────────
 ConsoleHelper.PrintSection("Generating Target Card");
 
+// The GPU kernel is intentionally optimized for the common 16-digit
+// Visa/Mastercard shape: 6 BIN digits, 9 searched digits, and 1 Luhn digit
+// generated inside the kernel.
 var sixteenBins = IsraeliCards.KnownBins.Where(b => b.CardLength == 16).ToList();
 var bin = sixteenBins[Random.Shared.Next(sixteenBins.Count)];
 string card = IsraeliCards.GenerateCard(bin);
@@ -42,6 +48,8 @@ ConsoleHelper.PrintHighlight("BIN", $"{bin.Prefix} — {bin.Issuer}");
 
 byte[] cardAscii   = Encoding.ASCII.GetBytes(card);
 // GPU kernel handles saltLength 0 or 16 — keep salts exactly 16 bytes
+// Keeping salts exactly 16 bytes lets the kernel build one fixed SHA block
+// without loops, dynamic arrays, or heap allocation.
 byte[] staticSalt  = Encoding.ASCII.GetBytes("Pepper16ByteKey!"); // exactly 16 bytes
 byte[] perCardSalt = new byte[16];
 Random.Shared.NextBytes(perCardSalt);
@@ -75,6 +83,9 @@ var attacks = new List<AttackResult>();
 void RunAttack(string label, string hash, bool sha256, byte[] salt)
 {
     ConsoleHelper.PrintSection($"Attack — {label}");
+    // The CPU passes only the target hash, BIN, algorithm flag, and salt.
+    // GpuCracker.Crack does the full candidate search on the GPU and returns
+    // the first card whose GPU-computed digest matches this target hash.
     var r = GpuCracker.Crack(hash, bin, sha256, salt, gpuBackend, gpuProg);
     Console.WriteLine();
     ConsoleHelper.PrintResultRow("Algorithm",          label);
@@ -155,4 +166,34 @@ else
 {
     ConsoleHelper.PrintInfo("No summary-cpu.txt found yet. Run CardHashDemo.Cpu on your CPU machine,");
     ConsoleHelper.PrintInfo("then copy summary-cpu.txt here to see the side-by-side comparison.");
+}
+
+static (GpuBackend Backend, string DeviceInfo) SelectGpuBackend(
+    IReadOnlyList<(GpuBackend Backend, string DeviceInfo)> options)
+{
+    ConsoleHelper.PrintSection("Select GPU Backend");
+    for (int i = 0; i < options.Count; i++)
+        ConsoleHelper.PrintInfo($"{i + 1}. {options[i].DeviceInfo}");
+
+    if (options.Count == 1)
+    {
+        ConsoleHelper.PrintInfo("Only one usable backend was found; selecting it automatically.");
+        return options[0];
+    }
+
+    if (Console.IsInputRedirected)
+    {
+        ConsoleHelper.PrintInfo("Input is redirected; selecting option 1 automatically.");
+        return options[0];
+    }
+
+    while (true)
+    {
+        Console.Write($"  Choose backend [1-{options.Count}]: ");
+        string? input = Console.ReadLine();
+        if (int.TryParse(input, out int choice) && choice >= 1 && choice <= options.Count)
+            return options[choice - 1];
+
+        ConsoleHelper.PrintWarning($"Please enter a number between 1 and {options.Count}.");
+    }
 }
