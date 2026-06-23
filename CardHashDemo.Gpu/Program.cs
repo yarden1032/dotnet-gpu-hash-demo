@@ -14,15 +14,17 @@ ConsoleHelper.PrintWarning("EDUCATIONAL USE ONLY — authorized security testing
 // Detect all usable GPU backends. Detection also compiles the actual crack
 // kernel, so a listed option means the GPU can run this demo's kernel, not just
 // that Windows can see a display adapter.
-var gpuOptions = GpuCracker.DetectAvailableGpus();
+var gpuOptions = GpuCracker.DetectAvailableGpus(out var skippedGpuOptions);
 if (gpuOptions.Count == 0)
 {
     ConsoleHelper.PrintWarning("No GPU found (tried CUDA and OpenCL).");
+    PrintSkippedGpuOptions(skippedGpuOptions);
     ConsoleHelper.PrintInfo("Run CardHashDemo.Cpu on this machine instead.");
     return;
 }
-var (gpuBackend, gpuDeviceInfo) = SelectGpuBackend(gpuOptions);
-ConsoleHelper.PrintSuccess($"GPU selected: {gpuDeviceInfo}");
+PrintSkippedGpuOptions(skippedGpuOptions);
+var gpuDevice = SelectGpuBackend(gpuOptions);
+ConsoleHelper.PrintSuccess($"GPU selected: {gpuDevice.DeviceInfo}");
 
 ConsoleHelper.Pause();
 
@@ -86,7 +88,7 @@ void RunAttack(string label, string hash, bool sha256, byte[] salt)
     // The CPU passes only the target hash, BIN, algorithm flag, and salt.
     // GpuCracker.Crack does the full candidate search on the GPU and returns
     // the first card whose GPU-computed digest matches this target hash.
-    var r = GpuCracker.Crack(hash, bin, sha256, salt, gpuBackend, gpuProg);
+    var r = GpuCracker.Crack(hash, bin, sha256, salt, gpuDevice, gpuProg);
     Console.WriteLine();
     ConsoleHelper.PrintResultRow("Algorithm",          label);
     ConsoleHelper.PrintResultRow("Card found",         r.Card ?? "(not found)");
@@ -135,7 +137,7 @@ ConsoleHelper.Pause();
 DemoSections.PrintTakeaways();
 
 // ── Write summary file ────────────────────────────────────────────────────
-string gpuDeviceName = gpuDeviceInfo; // already captured at startup
+string gpuDeviceName = gpuDevice.DeviceInfo; // already captured at startup
 
 var summary = new ResultSummary
 {
@@ -168,8 +170,7 @@ else
     ConsoleHelper.PrintInfo("then copy summary-cpu.txt here to see the side-by-side comparison.");
 }
 
-static (GpuBackend Backend, string DeviceInfo) SelectGpuBackend(
-    IReadOnlyList<(GpuBackend Backend, string DeviceInfo)> options)
+static GpuDeviceOption SelectGpuBackend(IReadOnlyList<GpuDeviceOption> options)
 {
     ConsoleHelper.PrintSection("Select GPU Backend");
     for (int i = 0; i < options.Count; i++)
@@ -196,4 +197,14 @@ static (GpuBackend Backend, string DeviceInfo) SelectGpuBackend(
 
         ConsoleHelper.PrintWarning($"Please enter a number between 1 and {options.Count}.");
     }
+}
+
+static void PrintSkippedGpuOptions(IReadOnlyList<GpuDetectionIssue> skippedGpuOptions)
+{
+    if (skippedGpuOptions.Count == 0)
+        return;
+
+    ConsoleHelper.PrintSection("Unavailable GPU Options");
+    foreach (var skipped in skippedGpuOptions)
+        ConsoleHelper.PrintWarning($"{skipped.DeviceInfo} skipped: {skipped.Reason}");
 }

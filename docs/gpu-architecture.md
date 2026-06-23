@@ -7,7 +7,7 @@ manual than normal C#.
 
 `Program.cs` handles the story of the demo:
 
-1. Detect usable GPU backends and let the user choose one in the terminal.
+1. Detect usable CUDA/OpenCL device options and let the user choose one in the terminal.
 2. Generate a valid target card.
 3. Compute the target hashes on the CPU.
 4. Call `GpuCracker.Crack(...)` for each attack.
@@ -16,7 +16,7 @@ manual than normal C#.
 `GpuCracker.cs` handles the GPU work:
 
 1. Create an ILGPU `Context`.
-2. Create a CUDA or OpenCL `Accelerator`.
+2. Create the selected CUDA or OpenCL `Accelerator`.
 3. Copy small input buffers to GPU memory.
 4. Compile/load the crack kernel.
 5. Launch the kernel in batches.
@@ -144,9 +144,19 @@ ILGPU's argument order is `target, compare, value`. This differs from
 
 ## Detection Is More Than Device Discovery
 
-`GpuCracker.DetectAvailableGpus()` tries CUDA first, then OpenCL. It also calls
-`ProbeKernelCompilation(...)` for each backend.
+`GpuCracker.DetectAvailableGpus()` tries CUDA first, then OpenCL. For each
+backend it enumerates every device ILGPU reports, opens that specific device
+index, and calls `ProbeKernelCompilation(...)`.
 
 This matters because a system can see the GPU and still fail to compile this
-specific kernel. The app reports a GPU as usable only when the crack kernel
-compiles.
+specific kernel. The app reports a device option as usable only when the crack
+kernel compiles on that exact backend/device pair.
+
+Skipped options are not silently hidden. `Program.cs` prints them under
+`Unavailable GPU Options` with the exception message from the failed accelerator
+or kernel probe.
+
+One physical GPU can appear through more than one backend. For example, an
+NVIDIA card can appear as `[CUDA device 0]` and also as `[OpenCL device 1]`.
+Those are two driver paths to the same hardware. CUDA is usually faster and more
+native for NVIDIA, while OpenCL is useful for comparing behavior across vendors.

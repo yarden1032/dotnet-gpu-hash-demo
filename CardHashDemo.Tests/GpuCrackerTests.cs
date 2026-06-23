@@ -21,7 +21,7 @@ public class GpuCrackerTests
             Assert.Ignore("No CUDA/OpenCL GPU was detected.");
 
         string hash = Convert.ToHexString(SHA1.HashData(Encoding.ASCII.GetBytes(KnownCard)));
-        var result = GpuCracker.Crack(hash, HapoalimBin, useSha256: false, salt: [], detected.Value.Backend);
+        var result = GpuCracker.Crack(hash, HapoalimBin, useSha256: false, salt: [], detected.Value);
 
         Assert.That(result.Card, Is.EqualTo(KnownCard));
     }
@@ -34,7 +34,7 @@ public class GpuCrackerTests
             Assert.Ignore("No CUDA/OpenCL GPU was detected.");
 
         string hash = Convert.ToHexString(SHA256.HashData(Encoding.ASCII.GetBytes(KnownCard)));
-        var result = GpuCracker.Crack(hash, HapoalimBin, useSha256: true, salt: [], detected.Value.Backend);
+        var result = GpuCracker.Crack(hash, HapoalimBin, useSha256: true, salt: [], detected.Value);
 
         Assert.That(result.Card, Is.EqualTo(KnownCard));
     }
@@ -50,7 +50,7 @@ public class GpuCrackerTests
         byte[] input = [.. salt, .. Encoding.ASCII.GetBytes(KnownCard)];
         string hash = Convert.ToHexString(SHA256.HashData(input));
 
-        var result = GpuCracker.Crack(hash, HapoalimBin, useSha256: true, salt, detected.Value.Backend);
+        var result = GpuCracker.Crack(hash, HapoalimBin, useSha256: true, salt, detected.Value);
 
         Assert.That(result.Card, Is.EqualTo(KnownCard));
     }

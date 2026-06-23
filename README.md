@@ -67,10 +67,10 @@ dotnet run --project CardHashDemo.Cpu\CardHashDemo.Cpu.csproj
 
 ### CardHashDemo.Gpu
 
-Runs the demo with ILGPU. It detects usable CUDA/OpenCL backends, shows them as
-numbered terminal options, and uses the backend you choose. Detection also
-compiles the actual crack kernel, so a listed GPU means the demo kernel is
-usable, not merely that Windows can see a GPU.
+Runs the demo with ILGPU. It detects usable CUDA/OpenCL device options, shows
+them as numbered terminal choices, and uses the exact backend/device you choose.
+Detection also compiles the actual crack kernel, so a listed GPU means the demo
+kernel is usable, not merely that Windows can see a GPU.
 
 Run:
 
@@ -83,6 +83,11 @@ GPU notes:
 - NVIDIA CUDA is the preferred backend.
 - If CUDA and OpenCL are both usable, the GPU app asks you to choose `1`, `2`,
   and so on in the terminal.
+- The same physical NVIDIA GPU can appear twice: once as `[CUDA device 0]` and
+  once as `[OpenCL device N]`. CUDA is usually the better choice for NVIDIA,
+  but OpenCL is useful for comparison and troubleshooting.
+- If a device is visible through OpenCL but cannot compile the ILGPU kernel, it
+  is shown under `Unavailable GPU Options` with the driver/compiler reason.
 - The kernel is optimized for 16-digit Visa/Mastercard-style cards.
 - Supported salt lengths in the GPU kernel are `0` and `16` bytes.
 - See `docs/gpu-architecture.md` for the detailed explanation.
@@ -173,8 +178,13 @@ CPU and GPU performance on different machines.
 
 ### GPU is visible but the demo says no GPU is usable
 
-The app does more than detect a display adapter. It also compiles the ILGPU
-crack kernel. If kernel compilation fails, the backend is treated as unusable.
+The app does more than detect a display adapter. It checks every CUDA/OpenCL
+device option it can open and compiles the ILGPU crack kernel on that specific
+option. If kernel compilation fails, that option is treated as unusable.
+
+On some machines the same NVIDIA card is visible through both CUDA and OpenCL,
+but the OpenCL path may still be unusable for this ILGPU kernel. In that case
+the app keeps CUDA selectable and prints the OpenCL skip reason.
 
 Check:
 

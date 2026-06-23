@@ -9,6 +9,14 @@ namespace CardHashDemo.Gpu;
 
 public enum GpuBackend { Cuda, OpenCL }
 
+public readonly record struct GpuDeviceOption(GpuBackend Backend, int DeviceIndex, string DeviceInfo);
+
+public readonly record struct GpuDetectionIssue(
+    GpuBackend Backend,
+    int DeviceIndex,
+    string DeviceInfo,
+    string Reason);
+
 public record GpuCrackResult(string? Card, TimeSpan Elapsed, long Tried, long Total, double GHashSec);
 
 public static class GpuCracker
@@ -22,32 +30,83 @@ public static class GpuCracker
     private const int BatchSize = 1 << 24; // 16 M candidates per GPU launch
 
     /// <summary>
-    /// Detects all usable GPU backends. Each backend gets its own isolated
-    /// Context so a broken OpenCL driver cannot crash CUDA detection.
-    /// A backend is returned only if the actual crack kernel compiles.
+    /// Detects all usable CUDA/OpenCL device options. Each backend gets its own
+    /// isolated Context so a broken OpenCL driver cannot crash CUDA detection.
+    /// A device option is returned only if the actual crack kernel compiles.
     /// </summary>
-    public static IReadOnlyList<(GpuBackend Backend, string DeviceInfo)> DetectAvailableGpus()
+    public static IReadOnlyList<GpuDeviceOption> DetectAvailableGpus()
     {
-        var devices = new List<(GpuBackend Backend, string DeviceInfo)>();
+        return DetectAvailableGpus(out _);
+    }
+
+    public static IReadOnlyList<GpuDeviceOption> DetectAvailableGpus(out IReadOnlyList<GpuDetectionIssue> skippedDevices)
+    {
+        var devices = new List<GpuDeviceOption>();
+        var skipped = new List<GpuDetectionIssue>();
 
         try
         {
             using var ctx = Context.Create(b => b.Cuda());
-            using var acc = ctx.CreateCudaAccelerator(0);
-            ProbeKernelCompilation(acc);
-            devices.Add((GpuBackend.Cuda, $"{acc.Name}  ({acc.MemorySize / 1024 / 1024} MB VRAM)  [CUDA]"));
+            int deviceIndex = 0;
+            foreach (CudaDevice _ in ctx.GetCudaDevices())
+            {
+                string deviceInfo = $"CUDA device {deviceIndex}";
+                try
+                {
+                    using var acc = ctx.CreateCudaAccelerator(deviceIndex);
+                    ProbeKernelCompilation(acc);
+                    deviceInfo = $"{acc.Name}  ({acc.MemorySize / 1024 / 1024} MB memory)  [CUDA device {deviceIndex}]";
+                    devices.Add(new GpuDeviceOption(
+                        GpuBackend.Cuda,
+                        deviceIndex,
+                        deviceInfo));
+                }
+                catch (Exception ex)
+                {
+                    skipped.Add(new GpuDetectionIssue(
+                        GpuBackend.Cuda,
+                        deviceIndex,
+                        deviceInfo,
+                        FormatDetectionError(ex)));
+                }
+
+                deviceIndex++;
+            }
         }
         catch { }
 
         try
         {
-            using var ctx = Context.Create(b => b.OpenCL());
-            using var acc = ctx.CreateCLAccelerator(0);
-            ProbeKernelCompilation(acc);
-            devices.Add((GpuBackend.OpenCL, $"{acc.Name}  ({acc.MemorySize / 1024 / 1024} MB VRAM)  [OpenCL]"));
+            using var ctx = Context.Create(b => b.OpenCL(_ => true));
+            int deviceIndex = 0;
+            foreach (CLDevice device in ctx.GetCLDevices())
+            {
+                string deviceInfo =
+                    $"{device.Name}  ({device.MemorySize / 1024 / 1024} MB memory)  [OpenCL device {deviceIndex}, {device.VendorName}, {device.DeviceType}]";
+                try
+                {
+                    using var acc = ctx.CreateCLAccelerator(deviceIndex);
+                    ProbeKernelCompilation(acc);
+                    devices.Add(new GpuDeviceOption(
+                        GpuBackend.OpenCL,
+                        deviceIndex,
+                        deviceInfo));
+                }
+                catch (Exception ex)
+                {
+                    skipped.Add(new GpuDetectionIssue(
+                        GpuBackend.OpenCL,
+                        deviceIndex,
+                        deviceInfo,
+                        FormatDetectionError(ex)));
+                }
+
+                deviceIndex++;
+            }
         }
         catch { }
 
+        skippedDevices = skipped;
         return devices;
     }
 
@@ -55,7 +114,7 @@ public static class GpuCracker
     /// Detects the preferred GPU backend: CUDA first, then OpenCL.
     /// Returns null if no GPU is available or if the crack kernel cannot compile.
     /// </summary>
-    public static (GpuBackend Backend, string DeviceInfo)? DetectGpu()
+    public static GpuDeviceOption? DetectGpu()
     {
         var devices = DetectAvailableGpus();
         return devices.Count > 0 ? devices[0] : null;
@@ -81,12 +140,35 @@ public static class GpuCracker
             ArrayView1D<byte, Stride1D.Dense>>(CrackKernel);
     }
 
+    private static string FormatDetectionError(Exception ex)
+    {
+        var root = ex.GetBaseException();
+        return $"{root.GetType().Name}: {root.Message}";
+    }
+
     public static GpuCrackResult Crack(
         string targetHashHex,
         BinEntry bin,
         bool useSha256,
         byte[] salt,
         GpuBackend backend,
+        IProgress<(long tried, long total, TimeSpan elapsed)>? progress = null)
+    {
+        return Crack(
+            targetHashHex,
+            bin,
+            useSha256,
+            salt,
+            new GpuDeviceOption(backend, 0, $"{backend} device 0"),
+            progress);
+    }
+
+    public static GpuCrackResult Crack(
+        string targetHashHex,
+        BinEntry bin,
+        bool useSha256,
+        byte[] salt,
+        GpuDeviceOption device,
         IProgress<(long tried, long total, TimeSpan elapsed)>? progress = null)
     {
         // For a 16-digit card with a 6-digit BIN:
@@ -106,12 +188,12 @@ public static class GpuCracker
 
         // Context owns compiler/backend state. Accelerator is the actual GPU
         // device handle. Keep both alive for the whole cracking operation.
-        using var context     = backend == GpuBackend.Cuda
+        using var context     = device.Backend == GpuBackend.Cuda
             ? Context.Create(b => b.Cuda())
-            : Context.Create(b => b.OpenCL());
-        using var accelerator = backend == GpuBackend.Cuda
-            ? (Accelerator)context.CreateCudaAccelerator(0)
-            : context.CreateCLAccelerator(0);
+            : Context.Create(b => b.OpenCL(_ => true));
+        using var accelerator = device.Backend == GpuBackend.Cuda
+            ? (Accelerator)context.CreateCudaAccelerator(device.DeviceIndex)
+            : context.CreateCLAccelerator(device.DeviceIndex);
 
         // d* variables are GPU buffers. Allocate1D copies the initial CPU
         // arrays to device memory for read-only inputs. dFound and dFoundCard
@@ -151,7 +233,7 @@ public static class GpuCracker
         catch (Exception ex)
         {
             throw new NotSupportedException(
-                $"Kernel compilation failed on {accelerator.Name} ({backend}). " +
+                $"Kernel compilation failed on {accelerator.Name} ({device.Backend} device {device.DeviceIndex}). " +
                 "This GPU/driver does not support ILGPU kernels. " +
                 "Run CardHashDemo.Cpu instead.", ex);
         }
